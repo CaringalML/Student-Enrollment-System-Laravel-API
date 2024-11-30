@@ -827,73 +827,84 @@ private function formatFileSize($bytes)
 
 
 
-
-
-
-
-
-
 public function uploadAvatar(Request $request, Student $student)
-    {
-        try {
-            // Validate the uploaded file
-            $request->validate([
-                'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
-            ]);
+{
+    try {
+        // Validate the uploaded file
+        $request->validate([
+            'avatar' => ['required', 'image', 'mimes:jpeg,png,jpg,gif', 'max:' . config('app.max_avatar_size', 2048)]
+        ]);
 
-            // Delete old avatar if exists
-            if ($student->avatar_path) {
-                Storage::disk('s3')->delete($student->avatar_path);
-            }
+        // Validate face quality first using your existing method
+        $file = $request->file('avatar');
+        $faceValidation = $this->validateAndAssessFace($file);
 
-            $file = $request->file('avatar');
-            
-            // Get original filename without extension
-            $originalName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
-            
-            // Clean the original filename (remove special characters and spaces)
-            $cleanName = Str::slug($originalName);
-            
-            // Get file extension
-            $extension = $file->getClientOriginalExtension();
-            
-            // Generate random suffix (6 characters)
-            $randomSuffix = Str::random(4);
-            
-            // Create new filename in format: originalname_randomsuffix.extension
-            $fileName = "{$cleanName}_{$randomSuffix}.{$extension}";
-            
-            // Store file in S3
-            $path = $file->storeAs(
-                'avatar_images',
-                $fileName,
-                's3'
-            );
+        if (!$faceValidation['isValid']) {
+            return response()->json([
+                'message' => $faceValidation['message'],
+                'quality_issues' => $faceValidation['quality_issues'],
+                'quality_assessment' => $faceValidation['quality_assessment']
+            ], 422);
+        }
 
-            // Update student record with new avatar path
+        // Delete old avatar if exists
+        if ($student->avatar_path) {
+            Storage::disk('s3')->delete($student->avatar_path);
+        }
+        
+        // Get original filename without extension and clean it
+        $originalName = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+        $cleanName = Str::limit(Str::slug($originalName), 50, '');
+        $extension = $file->getClientOriginalExtension();
+        $randomSuffix = Str::random(4);
+        
+        // Create new filename: originalname_randomsuffix.extension
+        $fileName = "{$cleanName}_{$randomSuffix}.{$extension}";
+        
+        // Store file in S3 with student ID in path for organization
+        $path = $file->storeAs(
+            "avatar_images/{$student->id}",
+            $fileName,
+            's3'
+        );
+
+        // Update student record within transaction
+        DB::transaction(function () use ($student, $path) {
             $student->avatar_path = $path;
             $student->save();
+        });
 
-            // Generate temporary URL for response
-            $url = Storage::disk('s3')->temporaryUrl(
-                $path,
-                now()->addMinutes(3)
-            );
+        // Generate CloudFront URL using your existing pattern
+        $cloudFrontDomain = config('services.cloudfront.domain');
+        $cloudFrontUrl = "https://{$cloudFrontDomain}/{$path}";
 
-            return response()->json([
-                'message' => 'Avatar uploaded successfully',
-                'path' => $path,
-                'temporary_url' => $url,
-                'filename' => $fileName
-            ], 200);
+        return response()->json([
+            'message' => 'Avatar uploaded successfully',
+            'path' => $path,
+            'avatar_url' => $cloudFrontUrl,
+            'filename' => $fileName,
+            'quality_assessment' => $faceValidation['quality_assessment']
+        ], 200);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Error uploading avatar',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (ValidationException $e) {
+        return response()->json([
+            'message' => 'Invalid file upload',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (S3Exception $e) {
+        return response()->json([
+            'message' => 'Storage service error',
+            'error' => $e->getMessage()
+        ], 503);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error uploading avatar',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
+
+
 
 
 
