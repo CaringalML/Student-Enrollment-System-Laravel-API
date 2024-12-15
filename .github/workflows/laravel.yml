@@ -13,17 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
+      # - name: Set up PHP
+      #   uses: shivammathur/setup-php@v2
+      #   with:
+      #     php-version: '8.2'
 
-      - name: Clear Composer Cache
-        run: composer clear-cache
+      # - name: Clear Composer Cache
+      #   run: composer clear-cache
         
-      - name: Install Dependencies
-        run: |
-           composer install --prefer-dist --no-dev --no-interaction --no-progress --optimize-autoloader
+      # - name: Install Dependencies
+      #   run: |
+      #      composer install --prefer-dist --no-dev --no-interaction --no-progress --optimize-autoloader
     
 
         # Configure AWS CLI with credentials from secrets
