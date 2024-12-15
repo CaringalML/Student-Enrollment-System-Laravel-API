@@ -36,7 +36,7 @@ db_connection = "mysql"
 db_port      = 3306
 db_name      = "collage"
 db_username  = "admin"
-db_password  = " "
+db_password  = " "  # put you database password here
 
 # Laravel Environment Variables
 app_name     = "Laravel"
